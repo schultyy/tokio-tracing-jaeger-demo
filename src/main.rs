@@ -1,19 +1,27 @@
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use std::error::Error;
+
+use opentelemetry::sdk::trace::Tracer;
+use opentelemetry::trace::TraceError;
+use tracing::info;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::prelude::*;
+
 
 mod yak_shave;
 
-fn main() {
-    // a builder for `FmtSubscriber`.
-    let subscriber = FmtSubscriber::builder()
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(Level::TRACE)
-        // completes the builder.
-        .finish();
+fn init_tracer() -> Result<Tracer, TraceError> {
+    opentelemetry_jaeger::new_pipeline()
+        .with_service_name("jaeger_example")
+        .install_simple()
+}
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default subscriber failed");
+fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
+    let tracer = init_tracer().expect("Failed to initialize tracer");
+    tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::new("TRACE"))
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .try_init()
+            .expect("Failed to register tracer with registry");
 
     let number_of_yaks = 3;
     // this creates a new event, outside of any spans.
@@ -24,4 +32,6 @@ fn main() {
         all_yaks_shaved = number_shaved == number_of_yaks,
         "yak shaving completed."
     );
+    opentelemetry::global::shutdown_tracer_provider();
+    Ok(())
 }
